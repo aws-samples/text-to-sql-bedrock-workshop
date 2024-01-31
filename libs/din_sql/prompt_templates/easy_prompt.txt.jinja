@@ -1,0 +1,78 @@
+{{ instruction_tag_start }}You are a relational database expert who can take a natural question and write a SQL statement that will answer the question. Use the the schema links to generate the SQL queries for each of the questions. {{ instruction_tag_end }}
+
+{{fields}}
+
+{{ example_tag_start }}
+Q: "Find the buildings which have rooms with capacity more than 50."
+Schema_links: [classroom.building,classroom.capacity,50]
+SQL: {{sql_tag_start}}SELECT DISTINCT building FROM classroom WHERE capacity  >  50{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the room number of the rooms which can sit 50 to 100 students and their buildings."
+Schema_links: [classroom.building,classroom.room_number,classroom.capacity,50,100]
+SQL: {{sql_tag_start}}SELECT building ,  room_number FROM classroom WHERE capacity BETWEEN 50 AND 100{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Give the name of the student in the History department with the most credits."
+Schema_links: [student.name,student.dept_name,student.tot_cred,History]
+SQL: {{sql_tag_start}}SELECT name FROM student WHERE dept_name  =  'History' ORDER BY tot_cred DESC LIMIT 1{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the total budgets of the Marketing or Finance department."
+Schema_links: [department.budget,department.dept_name,Marketing,Finance]
+SQL: {{sql_tag_start}}SELECT sum(budget) FROM department WHERE dept_name  =  'Marketing' OR dept_name  =  'Finance'{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the department name of the instructor whose name contains 'Soisalon'."
+Schema_links: [instructor.dept_name,instructor.name,Soisalon]
+SQL: {{sql_tag_start}}SELECT dept_name FROM instructor WHERE name LIKE '%Soisalon%'{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "What is the name of the department with the most credits?"
+Schema_links: [course.dept_name,course.credits]
+SQL: {{sql_tag_start}}SELECT dept_name FROM course GROUP BY dept_name ORDER BY sum(credits) DESC LIMIT 1{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "How many instructors teach a course in the Spring of 2010?"
+Schema_links: [teaches.ID,teaches.semester,teaches.YEAR,Spring,2010]
+SQL: {{sql_tag_start}}SELECT COUNT (DISTINCT ID) FROM teaches WHERE semester  =  'Spring' AND YEAR  =  2010{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the name of the students and their department names sorted by their total credits in ascending order."
+Schema_links: [student.name,student.dept_name,student.tot_cred]
+SQL: {{sql_tag_start}}SELECT name ,  dept_name FROM student ORDER BY tot_cred{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the year which offers the largest number of courses."
+Schema_links: [SECTION.YEAR,SECTION.*]
+SQL: {{sql_tag_start}}SELECT YEAR FROM SECTION GROUP BY YEAR ORDER BY count(*) DESC LIMIT 1{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "What are the names and average salaries for departments with average salary higher than 42000?"
+Schema_links: [instructor.dept_name,instructor.salary,42000]
+SQL: {{sql_tag_start}}SELECT dept_name ,  AVG (salary) FROM instructor GROUP BY dept_name HAVING AVG (salary)  >  42000{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "How many rooms in each building have a capacity of over 50?"
+Schema_links: [classroom.*,classroom.building,classroom.capacity,50]
+SQL: {{sql_tag_start}}SELECT count(*) ,  building FROM classroom WHERE capacity  >  50 GROUP BY building{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the names of the top 3 departments that provide the largest amount of courses?"
+Schema_links: [course.dept_name,course.*]
+SQL: {{sql_tag_start}}SELECT dept_name FROM course GROUP BY dept_name ORDER BY count(*) DESC LIMIT 3{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the maximum and average capacity among rooms in each building."
+Schema_links: [classroom.building,classroom.capacity]
+SQL: {{sql_tag_start}}SELECT max(capacity) ,  avg(capacity) ,  building FROM classroom GROUP BY building{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the title of the course that is offered by more than one department."
+Schema_links: [course.title]
+SQL: {{sql_tag_start}}SELECT title FROM course GROUP BY title HAVING count(*)  >  1{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "{{test_sample_text}}"
+Schema_links: {{schema_links}}
+SQL: {{sql_tag_start}}

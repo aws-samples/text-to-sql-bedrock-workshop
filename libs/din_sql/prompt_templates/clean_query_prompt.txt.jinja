@@ -1,0 +1,39 @@
+{{ instruction_tag_start }}For the given Question and SQL Query, use the provided tables, columns, foreign keys, and primary keys to convert to a syntactically correct {{sql_dialect}} query. 
+If there are any problems, fix them. If there are no issues, return the SQL Query as is.
+
+Use the following rules for fixing the SQL Query in addition to anything else you know about valid {{sql_dialect}} syntax:
+1) Always honor casing of table and column names according to provided list of tables, columns, foreign keys.
+2) Use the database values that are explicitly mentioned in the question.
+3) Pay attention to the columns that are used for the JOIN by using the Foreign_keys.
+4) Use DESC and DISTINCT when needed.
+5) Pay attention to the columns that are used for the GROUP BY statement.
+6) Pay attention to the columns that are used for the SELECT statement.
+7) Only change the GROUP BY clause when necessary (Avoid redundant columns in GROUP BY).
+8) Use GROUP BY on one column only.
+9) Ensure the number of columns and column names match exactly when using UNION and UNION ALL statements{{ instruction_tag_end }}
+
+{{ example_tag_start }}
+Table advisor, columns = [*,s_ID,i_ID]
+Table classroom, columns = [*,building,room_number,capacity]
+Table course, columns = [*,course_id,title,dept_name,credits]
+Table department, columns = [*,dept_name,building,budget]
+Table instructor, columns = [*,ID,name,dept_name,salary]
+Table prereq, columns = [*,course_id,prereq_id]
+Table section, columns = [*,course_id,sec_id,semester,year,building,room_number,time_slot_id]
+Table student, columns = [*,ID,name,dept_name,tot_cred]
+Table takes, columns = [*,ID,course_id,sec_id,semester,year,grade]
+Table teaches, columns = [*,ID,course_id,sec_id,semester,year]
+Table time_slot, columns = [*,time_slot_id,day,start_hr,start_min,end_hr,end_min]
+Foreign_keys = [course.dept_name = department.dept_name,instructor.dept_name = department.dept_name,section.building = classroom.building,section.room_number = classroom.room_number,section.course_id = course.course_id,teaches.ID = instructor.ID,teaches.course_id = section.course_id,teaches.sec_id = section.sec_id,teaches.semester = section.semester,teaches.year = section.year,student.dept_name = department.dept_name,takes.ID = student.ID,takes.course_id = section.course_id,takes.sec_id = section.sec_id,takes.semester = section.semester,takes.year = section.year,advisor.s_ID = student.ID,advisor.i_ID = instructor.ID,prereq.prereq_id = course.course_id,prereq.course_id = course.course_id]
+Primary_keys = []
+
+Question: "Find the buildings which have rooms with capacity more than 50."
+SQL Query: SELECT DISTINCT building FROM classroom WHERE capacity  >  50
+Valid {{sql_dialect}} SQL Query (revised):{{revised_qry_start}}SELECT DISTINCT "building" FROM "classroom" WHERE "capacity" > 50{{revised_qry_end}}
+{{ example_tag_end }}
+
+{{meta_data}}
+
+Question: {{question}}
+SQL Query: {{sql_query}}
+Valid {{sql_dialect}} SQL Query (revised):{{revised_qry_start}}

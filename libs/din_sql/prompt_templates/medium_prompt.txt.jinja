@@ -1,0 +1,58 @@
+{{ instruction_tag_start }}You are a relational database expert who can take a natural question and write a SQL statement that will answer the question. Use the the schema links and Intermediate_representation to generate the SQL queries for each of the questions.{{ instruction_tag_end }}
+
+{{fields}}
+Foreign_keys = {{foreign_keys}}
+
+{{ example_tag_start }}
+Q: "Find the total budgets of the Marketing or Finance department."
+Schema_links: [department.budget,department.dept_name,Marketing,Finance]
+A: Let’s think step by step. For creating the SQL for the given question, we need to join these tables = []. First, create an intermediate representation, then use it to construct the SQL query.
+Intermediate_representation: select sum(department.budget) from department  where  department.dept_name = "Marketing"  or  department.dept_name = "Finance"
+SQL: {{sql_tag_start}}SELECT sum(budget) FROM department WHERE dept_name  =  'Marketing' OR dept_name  =  'Finance'{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the name and building of the department with the highest budget."
+Schema_links: [department.budget,department.dept_name,department.building]
+A: Let’s think step by step. For creating the SQL for the given question, we need to join these tables = []. First, create an intermediate representation, then use it to construct the SQL query.
+Intermediate_representation: select department.dept_name , department.building from department  order by department.budget desc limit 1
+SQL: {{sql_tag_start}}SELECT dept_name ,  building FROM department ORDER BY budget DESC LIMIT 1{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "What is the name and building of the departments whose budget is more than the average budget?"
+Schema_links: [department.budget,department.dept_name,department.building]
+A: Let’s think step by step. For creating the SQL for the given question, we need to join these tables = []. First, create an intermediate representation, then use it to construct the SQL query.
+Intermediate_representation:  select department.dept_name , department.building from department  where  @.@ > avg ( department.budget ) 
+SQL: {{sql_tag_start}}SELECT dept_name ,  building FROM department WHERE budget  >  (SELECT avg(budget) FROM department){{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the total number of students and total number of instructors for each department."
+Schema_links: [department.dept_name = student.dept_name,student.id,department.dept_name = instructor.dept_name,instructor.id]
+A: Let’s think step by step. For creating the SQL for the given question, we need to join these tables = [department,student,instructor]. First, create an intermediate representation, then use it to construct the SQL query.
+Intermediate_representation: "select count( distinct student.ID) , count( distinct instructor.ID) , department.dept_name from department  group by instructor.dept_name
+SQL: {{sql_tag_start}}SELECT count(DISTINCT T2.id) ,  count(DISTINCT T3.id) ,  T3.dept_name FROM department AS T1 JOIN student AS T2 ON T1.dept_name  =  T2.dept_name JOIN instructor AS T3 ON T1.dept_name  =  T3.dept_name GROUP BY T3.dept_name{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the title of courses that have two prerequisites?"
+Schema_links: [course.title,course.course_id = prereq.course_id]
+A: Let’s think step by step. For creating the SQL for the given question, we need to join these tables = [course,prereq]. First, create an intermediate representation, then use it to construct the SQL query.
+Intermediate_representation: select course.title from course  where  count ( prereq.* )  = 2  group by prereq.course_id
+SQL: {{sql_tag_start}}SELECT T1.title FROM course AS T1 JOIN prereq AS T2 ON T1.course_id  =  T2.course_id GROUP BY T2.course_id HAVING count(*)  =  2{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "Find the name of students who took any class in the years of 2009 and 2010."
+Schema_links: [student.name,student.id = takes.id,takes.YEAR,2009,2010]
+A: Let’s think step by step. For creating the SQL for the given question, we need to join these tables = [student,takes]. First, create an intermediate representation, then use it to construct the SQL query.
+Intermediate_representation: select  distinct student.name from student  where  takes.year = 2009  or  takes.year = 2010
+SQL: {{sql_tag_start}}SELECT DISTINCT T1.name FROM student AS T1 JOIN takes AS T2 ON T1.id  =  T2.id WHERE T2.YEAR  =  2009 OR T2.YEAR  =  2010{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "list in alphabetic order all course names and their instructors' names in year 2008."
+Schema_links: [course.title,course.course_id = teaches.course_id,teaches.id = instructor.id,instructor.name,teaches.year,2008]
+A: Let’s think step by step. For creating the SQL for the given question, we need to join these tables = [course,teaches,instructor]. First, create an intermediate representation, then use it to construct the SQL query.
+Intermediate_representation: select course.title , instructor.name from course  where  teaches.year = 2008  order by course.title asc
+SQL: {{sql_tag_start}}SELECT T1.title ,  T3.name FROM course AS T1 JOIN teaches AS T2 ON T1.course_id  =  T2.course_id JOIN instructor AS T3 ON T2.id  =  T3.id WHERE T2.YEAR  =  2008 ORDER BY T1.title{{sql_tag_end}}{{ example_tag_end }}
+
+{{ example_tag_start }}
+Q: "{{test_sample_text}}"
+Schema_links: {{schema_links}}
+SQL: {{sql_tag_start}}

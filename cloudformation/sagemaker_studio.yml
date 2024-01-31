@@ -1,0 +1,1744 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  This cloudformation template enables SageMaker Studio JupyterLab to launch and connect to Athena and RDS.
+  This template creates a demonstration SageMaker Studio Domain, User Profile, and JupyterLab Space
+  in a private VPC.
+
+Mappings:
+  VpcConfigurations:
+    cidr:
+      Vpc: 10.0.0.0/16
+      PublicSubnet1: 10.0.10.0/24
+      PrivateSubnet1: 10.0.20.0/24
+      PrivateSubnet2: 10.0.30.0/24
+
+  ## See Image ARN Formats: https://docs.aws.amazon.com/sagemaker/latest/dg/notebooks-available-images.html#notebooks-available-images-arn
+  SageMakerImageArns:
+    us-east-1:
+      ImageArn: arn:aws:sagemaker:us-east-2:137914896644:image/sagemaker-distribution-cpu
+    us-west-2:
+      # ImageArn: arn:aws:sagemaker:us-west-2:236514542706:image/sagemaker-data-science-310-v1
+      ImageArn: arn:aws:sagemaker:us-west-2:542918446943:image/sagemaker-distribution-cpu
+Parameters:
+  SageMakerDomainName:
+    Type: String
+    Description: Name of the Studio Domain to Create
+    Default: nl2sqlworkshop
+
+  GitRepositoryUrl: 
+    Type: String
+    Description: The .git url of the repository to clone 
+    Default: https://github.com/aws-samples/text-to-sql-bedrock-workshop.git
+
+  DBUser:
+    Description: The admin username
+    Type: String
+    NoEcho: true
+
+  DBPassword: 
+    Description: The admin password
+    Type: String
+    NoEcho: true
+
+  LayersBucket:
+    Description: The S3 bucket that contains the Lambda layers
+    Type: String
+    Default: workshopassets-fweredf2h2
+
+  Boto3LayerS3ObjKey:
+    Description: The S3 object key of the boto3 layer
+    Type: String
+    Default: boto3.zip
+
+Resources:
+  WorkshopS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-${AWS::Region}-${AWS::AccountId}-workshop
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+            - "*"
+            AllowedMethods:
+            - POST
+            - PUT
+            - GET
+            - HEAD
+            - DELETE
+            AllowedOrigins:
+            - https://*.sagemaker.aws
+            ExposedHeaders:
+            - ETag
+            - x-amz-delete-marker
+            - x-amz-id-2
+            - x-amz-request-id
+            - x-amz-server-side-encryption
+            - x-amz-version-id
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+
+  # BucketPolicy:
+  #   Type: AWS::S3::BucketPolicy
+  #   Properties:
+  #     Bucket: !Ref WorkshopS3Bucket
+  #     PolicyDocument:
+  #       Statement:
+  #       - Action:
+  #         - s3:*
+  #         Effect: Allow
+  #         Resource:
+  #         - !Sub ${WorkshopS3Bucket.Arn}
+  #         - !Sub ${WorkshopS3Bucket.Arn}/*
+  #         Principal:
+  #           AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+
+  MyFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+      LogGroupName: !Sub VpcFLowLogs-${AWS::StackName}
+      ResourceId: !Ref VPC
+      ResourceType: VPC
+      TrafficType: ALL
+
+  FlowLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - vpc-flow-logs.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: FlowLogsPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap 
+        - VpcConfigurations
+        - cidr
+        - Vpc
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-VPC'
+ 
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-IGW'
+ 
+  InternetGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+ 
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs ''
+      CidrBlock: !FindInMap 
+        - VpcConfigurations
+        - cidr
+        - PublicSubnet1
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} Public Subnet (AZ1)'
+ 
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs ''
+      CidrBlock: !FindInMap 
+        - VpcConfigurations
+        - cidr
+        - PrivateSubnet1
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} Private Subnet (AZ1)'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs ''
+      CidrBlock: !FindInMap 
+        - VpcConfigurations
+        - cidr
+        - PrivateSubnet2
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} Private Subnet (AZ2)'
+ 
+  NatGateway1EIP:
+    Type: 'AWS::EC2::EIP'
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+ 
+  NatGateway1:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt 
+        - NatGateway1EIP
+        - AllocationId
+      SubnetId: !Ref PublicSubnet1
+ 
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} Public Routes'
+ 
+  DefaultPublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+ 
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+ 
+  PrivateRouteTable1:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName} Private Routes (AZ1)'
+
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet2
+
+  PrivateSubnetInternetRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+  
+  S3Endpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - '*'
+            Resource:
+              - '*'
+      VpcId: !Ref VPC
+      RouteTableIds:
+        - !Ref PrivateRouteTable1
+ 
+  SageMakerInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group with no ingress rule
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPC
+  SageMakerInstanceSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: '-1'
+      GroupId: !Ref SageMakerInstanceSecurityGroup
+      SourceSecurityGroupId: !Ref SageMakerInstanceSecurityGroup
+      Description: Allows inbound traffic from the same security group
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow TLS for VPC Endpoint
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !FindInMap 
+            - VpcConfigurations
+            - cidr
+            - Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !FindInMap 
+            - VpcConfigurations
+            - cidr
+            - Vpc
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-endpoint-security-group
+  EndpointSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: '-1'
+      GroupId: !Ref VPCEndpointSecurityGroup
+      SourceSecurityGroupId: !Ref VPCEndpointSecurityGroup
+      Description: Allows inbound traffic from the same security group
+  
+  SageMakerExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - sagemaker.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-studio-permissions'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:GetRole
+                Resource: !Sub arn:aws:iam::${AWS::Region}:role/*
+              - Effect: Allow
+                Action:
+                  - athena:GetDataCatalog
+                  - athena:GetTableMetadata
+                  - athena:ListTableMetadata
+                  - athena:ListDatabases
+                Resource:
+                  - !Sub "arn:aws:athena:${AWS::Region}:${AWS::AccountId}:datacatalog/${AWS::StackName}-tpc_ds"
+              - Effect: Allow
+                Action:
+                  - athena:ListWorkGroups # requires *
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - athena:StartQueryExecution
+                  - athena:GetQueryResults
+                  - athena:GetWorkGroup
+                  - athena:StopQueryExecution
+                  - athena:GetQueryExecution
+                Resource: 
+                  - !Sub "arn:aws:athena:${AWS::Region}:${AWS::AccountId}:datacatalog/${AWS::StackName}-tpc_ds"
+                  - !Sub "arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AWS::StackName}-workgroup"
+              - Effect: Allow
+                Action:
+                  - s3:ListMultipartUploadParts
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:AbortMultipartUpload
+                  - s3:GetBucketLocatio
+                Resource: 
+                  - !Sub "arn:aws:s3:::${WorkshopS3Bucket}/*"
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: 
+                  - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude*
+                  - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan*
+              - Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                Resource: "*"
+              - Effect: Allow
+                Action: 
+                  - bedrock:CreateModelCustomizationJob
+                  - bedrock:GetModelCustomizationJob
+                Resource: !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:custom-model/"
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSageMakerFullAccess"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonS3ReadOnlyAccess"
+
+  VPCEndpointSagemakerAPI:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.sagemaker.api
+      VpcId: !Ref VPC
+  VPCEndpointSageMakerRuntime:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.sagemaker.runtime
+      VpcId: !Ref VPC
+  VPCEndpointCloudformation:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.cloudformation
+      VpcId: !Ref VPC
+  VPCEndpointSageMakerStudio:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub 'aws.sagemaker.${AWS::Region}.studio'
+      VpcId: !Ref VPC
+  VPCEndpointRDS:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.rds
+      VpcId: !Ref VPC
+  VPCEndpointSTS:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.sts
+      VpcId: !Ref VPC
+  VPCEndpointCW:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.monitoring'
+      VpcId: !Ref VPC
+  VPCEndpointCWL:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      VpcId: !Ref VPC
+  VPCEndpointAthena:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.athena'
+      VpcId: !Ref VPC
+  EFSEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.elasticfilesystem
+      VpcId: !Ref VPC
+  EC2Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2
+      VpcId: !Ref VPC
+
+  ### Athena #############################
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Description: workgroup for workshop
+      Name: !Sub "${AWS::StackName}-workgroup"
+      RecursiveDeleteOption: True
+      State: ENABLED
+      WorkGroupConfiguration: 
+        EnforceWorkGroupConfiguration: True
+        PublishCloudWatchMetricsEnabled: True
+        RequesterPaysEnabled: False
+        ResultConfiguration: 
+          EncryptionConfiguration: 
+            EncryptionOption: SSE_S3
+          OutputLocation: !Sub s3://${WorkshopS3Bucket}/athena_results/
+  
+  ### RDS ################################
+
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group MySQL RDS
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPC
+  RDSSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      GroupId: !Ref RdsSecurityGroup
+      SourceSecurityGroupId: !Ref SageMakerInstanceSecurityGroup
+      Description: Allow access from SageMaker Studio
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for RDS instance
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  # commenting out for cfn itration speed
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: workshop_db
+      Engine: mysql
+      EngineVersion: 8.0.33
+      DBInstanceClass: db.m5d.large # t2.micro doesn't support encryption at rest
+      AllocatedStorage: 20
+      PubliclyAccessible: False
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !Ref RdsSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      StorageEncrypted: True
+
+  ### Sagemaker ##########################
+  StudioDomain:
+    Type: AWS::SageMaker::Domain
+    Properties:
+      DomainName: !Sub 
+                - '${SageMakerDomainName}-${id}'
+                - id: !Select [2, !Split ["/", !Ref "AWS::StackId"] ]
+      AppNetworkAccessType: VpcOnly
+      AuthMode: IAM
+      VpcId: !Ref VPC
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      DefaultUserSettings:
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+        SecurityGroups:
+           - !Ref SageMakerInstanceSecurityGroup
+        StudioWebPortal: ENABLED
+        DefaultLandingUri: "studio::"
+        JupyterLabAppSettings:
+          LifecycleConfigArns:
+            - !GetAtt CreateLifecycleConfig.StudioLifecycleConfigArn
+      DefaultSpaceSettings:
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+        SecurityGroups:
+           - !Ref SageMakerInstanceSecurityGroup
+        # JupyterServerAppSettings:
+        #   DefaultResourceSpec:
+        #     InstanceType: system
+        # KernelGatewayAppSettings:
+        #   DefaultResourceSpec:
+        #     InstanceType: ml.t3.medium
+        #     SageMakerImageArn: !FindInMap 
+        #       - SageMakerImageArns
+        #       - !Ref AWS::Region
+        #       - ImageArn
+
+  # SageMakerJupyterLabSpace:
+  #   Type: AWS::SageMaker::Space
+  #   Properties:
+  #     DomainId: !Ref StudioDomain
+  #     SpaceName: WorkshopSpace
+  #     SpaceSharingSettings:
+  #       SharingType: Private
+  #     SpaceSettings: 
+  #       JupyterServerAppSettings:
+  #         DefaultResourceSpec:
+  #           InstanceType: system
+  #       # JupyterLabAppSettings:
+  #       #   DefaultResourceSpec:
+  #       #     InstanceType: ml.t3.medium
+  #       #     SageMakerImageArn: !FindInMap 
+  #       #       - SageMakerImageArns
+  #       #       - !Ref AWS::Region
+  #       #       - ImageArn
+  #       KernelGatewayAppSettings:
+  #         DefaultResourceSpec:
+  #           InstanceType: ml.t3.medium
+  #           SageMakerImageArn: !FindInMap 
+  #             - SageMakerImageArns
+  #             - !Ref AWS::Region
+  #             - ImageArn
+  
+  CreateSageMakerLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      Content: 
+        S3Bucket: !Ref LayersBucket
+        S3Key: !Ref Boto3LayerS3ObjKey
+      Description: Boto3 Latest Version Layer
+      LayerName: Boto3
+
+  CreateSageMakerApp:
+    Type: Custom::CreateSageMakerApp
+    Properties:
+      ServiceToken: !GetAtt CreateSageMakerAppFunction.Arn
+      Region: !Ref AWS::Region
+
+  CreateSageMakerAppFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - VPCEndpointSagemakerAPI
+      - VPCEndpointSageMakerStudio
+      - VPCEndpointCWL
+      - EC2Endpoint
+      - VPCEndpointSTS
+      - S3Endpoint
+      - NatGateway1
+      - PrivateSubnetInternetRoute
+      - PrivateRouteTable1
+      - PublicRouteTable
+      - PublicSubnet1
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - InternetGateway
+      - DefaultPublicRoute
+      - PrivateSubnet1RouteTableAssociation
+      - PrivateSubnet2RouteTableAssociation
+      - PublicSubnet1RouteTableAssociation
+    Properties:
+      Description: >
+        Creates and deletes SageMaker JupyterLab App and space.
+      Handler: index.handler
+      Layers:
+        - !GetAtt CreateSageMakerLayer.LayerVersionArn
+      Environment:
+        Variables:
+          SM_IMG_ARN: !FindInMap 
+            - SageMakerImageArns
+            - !Ref AWS::Region
+            - ImageArn
+          USER_PROFILE_NAME: !Select [0, !Split ['|', !Ref StudioUserProfile]]
+          DOMAIN_ID: !Ref StudioDomain
+          APP_TYPE: JupyterLab
+          SPACE_NAME: WorkshopSpace
+          APP_NAME: default
+          CONFIG_ARN: !GetAtt CreateLifecycleConfig.StudioLifecycleConfigArn
+      Runtime: python3.11
+      ReservedConcurrentExecutions: 5
+      TracingConfig:
+        Mode: Active
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 600
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import sys
+          import os
+          import cfnresponse
+          import boto3
+          from botocore import exceptions
+          import time
+
+          # initialize logger
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.DEBUG)
+          formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+          handler = logging.StreamHandler(sys.stdout)
+          logger.addHandler(handler)
+
+          # init clients and vars
+          SM_IMG_ARN = os.environ['SM_IMG_ARN']
+          USER_PROFILE_NAME = os.environ['USER_PROFILE_NAME']
+          CONFIG_ARN = os.environ['CONFIG_ARN']
+          DOMAIN_ID = os.environ['DOMAIN_ID']
+          APP_TYPE = os.environ['APP_TYPE']
+          SPACE_NAME = os.environ['SPACE_NAME']
+          APP_NAME = os.environ['APP_NAME']
+          SM_CLIENT = boto3.client('sagemaker')
+
+          def handler(event, context):
+              print(boto3.__version__)
+              logger.info(event)
+              logger.info(f"Event type was {event['RequestType']}.")
+
+              try:
+                  if event['RequestType'] == 'Delete':
+                      logger.info(f"Deleting all apps in space '{SPACE_NAME}' in domain {DOMAIN_ID}.")
+                      apps = SM_CLIENT.list_apps(
+                          SpaceNameEquals=SPACE_NAME,
+                          DomainIdEquals=DOMAIN_ID
+                      )
+                      logger.info(f"apps to delete: {apps}")
+                      for app in apps['Apps']:
+                          if app['Status'] != 'Deleted':
+                              sm_delete_app(app['AppName'])
+                      sm_delete_space()
+                  elif event['RequestType'] == 'Create':
+                      logger.info(f"Creating app '{APP_NAME}' and space '{SPACE_NAME}' in domain {DOMAIN_ID} for user profile {USER_PROFILE_NAME}.")
+                      sm_create_space_and_app()
+                  else:
+                      logger.info(f"Doing nothing.")
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  return {
+                      'statusCode': 200,
+                      'body': f'App {APP_NAME} and space {SPACE_NAME} deleted.'
+                  }
+              except Exception as e:
+                  logger.error(f"Error: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {})
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error: {e}'
+                  }
+
+
+          def sm_delete_space() -> None:
+              try:
+                  SM_CLIENT.delete_space(
+                      DomainId=DOMAIN_ID,
+                      SpaceName=SPACE_NAME
+                  )
+                  logger.info("sagemaker space deleted")
+              except exceptions.ClientError as e:
+                  if e.response['Error']['Code'] == 'ResourceNotFound':
+                      logger.info("sagemaker space not found, skipping")
+                  else:
+                      # throw exception
+                      logger.error(e)
+                      raise Exception(e)
+
+
+          def sm_delete_app(app_name) -> None:
+              try:
+                  logger.info(f"Deleting app {app_name}")
+                  SM_CLIENT.delete_app(
+                      DomainId=DOMAIN_ID,
+                      SpaceName=SPACE_NAME,
+                      AppName=app_name,
+                      AppType=APP_TYPE
+                  )
+                  app_status = SM_CLIENT.describe_app(
+                      DomainId=DOMAIN_ID,
+                      SpaceName=SPACE_NAME,
+                      AppName=app_name,
+                      AppType=APP_TYPE
+                  )
+                  app_status = app_status['Status']
+                  logger.info(f"App status is {app_status}")
+                  while app_status not in ['Deleted','Failed']:
+                      logger.info(f"App status is {app_status}, waiting...")
+                      app_status = SM_CLIENT.describe_app(
+                          DomainId=DOMAIN_ID,
+                          SpaceName=SPACE_NAME,
+                          AppName=app_name,
+                          AppType=APP_TYPE
+                      )
+                      app_status = app_status['Status']
+                      time.sleep(3)
+                  logger.info(f"app '{app_name}' deleted")
+              except exceptions.ClientError as e:
+                  if e.response['Error']['Code'] == 'ResourceNotFound':
+                      logger.info("sagemaker app not found, skipping")
+                  elif e.response['Error']['Code'] == 'ValidationException' and str(e.response['Error']['Message']).startswith(f"App [{app_name}] has already been deleted."):
+                      logger.info(e.response['Error']['Message'])
+                  else:
+                      # throw exception
+                      raise Exception(e)
+
+
+          def sm_create_space_and_app() -> None:
+              try:
+                  SM_CLIENT.create_space(
+                      DomainId=DOMAIN_ID,
+                      SpaceName=SPACE_NAME,
+                      SpaceSettings={
+                          "JupyterLabAppSettings": {
+                              "DefaultResourceSpec": {
+                                  "InstanceType": "ml.m5.large",
+                                  "SageMakerImageArn": SM_IMG_ARN,
+                                  "SageMakerImageVersionAlias": "1.2.0",
+                                  "LifecycleConfigArn": CONFIG_ARN
+                              }
+                          },
+                          "AppType": APP_TYPE
+                      },
+                      OwnershipSettings={
+                          "OwnerUserProfileName": USER_PROFILE_NAME
+                      },
+                      SpaceSharingSettings={
+                          "SharingType": "Private"
+                      }
+                  )
+
+                  space_status = SM_CLIENT.describe_space(
+                      SpaceName=SPACE_NAME,
+                      DomainId=DOMAIN_ID
+                  )
+                  # space_status['Status']
+                  space_status = space_status['Status']
+                  wait_count = 0
+                  while wait_count < 5 and space_status not in ['InService','Failed', 'Update_Failed', 'Delete_Failed']:
+                      logger.info(f"Space status is {space_status}, waiting...")
+                      space_status = SM_CLIENT.describe_space(
+                          SpaceName=SPACE_NAME,
+                          DomainId=DOMAIN_ID
+                      )
+                      # space_status['Status']
+                      space_status = space_status['Status']
+                      wait_count+=1
+                      time.sleep(3)
+                      
+
+                  if space_status == 'InService':
+                      logger.info(f"Space status is {space_status}, creating app.")
+                      SM_CLIENT.create_app(
+                          DomainId=DOMAIN_ID,
+                          SpaceName=SPACE_NAME,
+                          AppType=APP_TYPE,
+                          AppName=APP_NAME,
+                          ResourceSpec={
+                              "InstanceType": 'ml.t3.medium',
+                              "SageMakerImageArn": SM_IMG_ARN
+                          }
+                      )
+                  else:
+                      logger.error(f"Space status is {space_status} after {str(wait_count)} attempts, not creating app.")
+                      raise Exception(f"Space status is {space_status} after {str(wait_count)} attempts, not creating app.")
+              except exceptions.ClientError as e:
+                  logger.error(f"{e}")
+                  raise Exception(e)
+
+  StudioUserProfile:
+    Type: AWS::SageMaker::UserProfile
+    DependsOn: 
+      - CreateLifecycleConfig
+    Properties:
+      DomainId: !Ref StudioDomain
+      UserProfileName: workshop-user
+      UserSettings: 
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+
+  CreateLifecycleConfig:
+    Type: Custom::CreateLifecycleConfig
+    Properties:
+      ServiceToken: !GetAtt CreateLifeCycleConfigFunction.Arn
+      Region: !Ref AWS::Region
+
+  CreateLifeCycleConfigFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - VPCEndpointSagemakerAPI
+      - VPCEndpointSageMakerStudio
+      - VPCEndpointCWL
+      - EC2Endpoint
+      - VPCEndpointSTS
+      - S3Endpoint
+      - NatGateway1
+      - PrivateSubnetInternetRoute
+      - PrivateRouteTable1
+      - PublicRouteTable
+      - PublicSubnet1
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - InternetGateway
+      - DefaultPublicRoute
+      - PrivateSubnet1RouteTableAssociation
+      - PrivateSubnet2RouteTableAssociation
+      - PublicSubnet1RouteTableAssociation
+    Properties:
+      Description: >
+        Creates a SageMaker Studio Lifecycle Config and adds it to the specified domain
+      Handler: index.handler
+      Layers:
+        - !GetAtt CreateSageMakerLayer.LayerVersionArn
+      Environment:
+        Variables:
+          GIT_REPO: !Ref GitRepositoryUrl
+          CONFIG_NAME: !Sub 
+            - 'lifecycle-config-${id}'
+            - id: !Select [2, !Split ["/", !Ref "AWS::StackId"] ]
+      Runtime: python3.11
+      ReservedConcurrentExecutions: 5
+      TracingConfig:
+        Mode: Active
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Role:
+        Fn::GetAtt: CreateLifecyleRole.Arn
+      Timeout: 180
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import base64 
+          from botocore import exceptions
+          import logging
+          import sys
+          import os
+          import cfnresponse
+
+          # initialize logger
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.DEBUG)
+          formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+          handler = logging.StreamHandler(sys.stdout)
+          logger.addHandler(handler)
+
+          GIT_REPO = os.environ['GIT_REPO']
+          CONFIG_NAME = os.environ['CONFIG_NAME']
+          SM_CLIENT = boto3.client('sagemaker')
+
+
+          def handler(event, context):
+              logger.info(event)
+              lifecycle_script = f"""#!/bin/bash
+
+              set -eux
+
+              # Replace this with the URL of your git repository
+              export REPOSITORY_URL="{GIT_REPO}"
+
+              # Check if the repository already exists
+              if [ -d "/home/sagemaker-user/$(basename $REPOSITORY_URL .git)" ]; then
+                echo "Repository already cloned, exiting."
+                exit 0
+              fi
+
+              # If not cloned, clone the repository  
+              git -C /home/sagemaker-user clone $REPOSITORY_URL >&2
+              """
+              if event['RequestType'] == 'Delete':
+                  try:
+                      response = SM_CLIENT.delete_studio_lifecycle_config(
+                          StudioLifecycleConfigName=CONFIG_NAME
+                      )
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, response)
+                      return {
+                          'statusCode': 200,
+                          'body': 'Lifecycle config deleted'
+                      }
+                  except exceptions.ClientError as e:
+                      if e.response['Error']['Code'] == 'ResourceNotFound':
+                          logger.info("Lifecycle config not found, skipping")
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, e.response)
+                      else:
+                          # throw exception
+                          logger.error(e)
+                          cfnresponse.send(event, context, cfnresponse.FAILED, e.response)
+                          return {
+                              'statusCode': e.response['ResponseMetadata']['HTTPStatusCode'],
+                              'body': json.dumps(e['Error']['Code'])
+                            }
+              elif event['RequestType'] == 'Create':
+                  lifecycle_script_b64 = base64.b64encode(lifecycle_script.encode('utf-8')).decode('utf-8')
+                  
+                  try:
+                      resp_lifecycle_config = SM_CLIENT.create_studio_lifecycle_config(
+                          StudioLifecycleConfigName=CONFIG_NAME,
+                          StudioLifecycleConfigContent=lifecycle_script_b64,
+                          StudioLifecycleConfigAppType="JupyterLab"
+                      )
+                      logger.info(f"Lifecycle config created successfully. Arn: {resp_lifecycle_config['StudioLifecycleConfigArn']}")
+                      response_data = {}
+                      response_data['StudioLifecycleConfigArn'] = resp_lifecycle_config['StudioLifecycleConfigArn']
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)
+                      return {
+                          'statusCode': 200,
+                          'body': json.dumps(resp_lifecycle_config['StudioLifecycleConfigArn'])
+                      }
+                  except exceptions.ClientError as e:
+                      logger.error(f"{e}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, e)
+                      return {
+                          'statusCode': e.response['ResponseMetadata']['HTTPStatusCode'],
+                          'body': json.dumps(e['Error']['Code'])
+                        }
+              else:
+                  logger.info(f"Request type was {event['RequestType']}. Doing nothing.")
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps("Doing nothing.")
+                    }
+
+
+  CreateLifecyleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess
+      Policies:
+        - PolicyName: allow_lifecycle_config_create
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sagemaker:CreateStudioLifecycleConfig
+                Resource: !Sub arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:studio-lifecycle-config/*
+              - Effect: Allow
+                Action:
+                  - sagemaker:DeleteStudioLifecycleConfig
+                Resource: !Sub 
+                  - 'arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:studio-lifecycle-config/lifecycle-config-${id}'
+                  - id: !Select [2, !Split ["/", !Ref "AWS::StackId"] ]
+
+  LambdaRole: 
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess
+      Policies:
+        - PolicyName: allow_sagemaker_space_permissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sagemaker:CreateApp
+                  - sagemaker:DeleteApp
+                  - sagemaker:DescribeApp
+                Resource: 
+                  - !Sub arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:app/${StudioDomain}/*/*/*
+              - Effect: Allow
+                Action:
+                  - sagemaker:ListApps
+                Resource: 
+                  - !Sub arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:app/*/*/*/*
+              - Effect: Allow
+                Action:
+                  - sagemaker:CreateSpace
+                  - sagemaker:DeleteSpace
+                  - sagemaker:AddTags
+                  - sagemaker:DeleteTags
+                  - sagemaker:UpdateSpace
+                  - sagemaker:DescribeSpace
+                Resource: !Sub arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:space/${StudioDomain}/*
+                
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Allow HTTPS traffic
+      VpcId: !Ref VPC
+
+# create athena TPC connector
+  CreateAthenaDataConnector:
+    Type: Custom::CreateAthenaDataConnector
+    Properties:
+      ServiceToken: !GetAtt CreateAthenaDataConnectorFunction.Arn
+      Region: !Ref AWS::Region
+
+  CreateAthenaDataConnectorFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: 
+      - VPCEndpointSagemakerAPI
+      - VPCEndpointSageMakerStudio
+      - VPCEndpointCWL
+      - EC2Endpoint
+      - VPCEndpointSTS
+      - S3Endpoint
+      - NatGateway1
+      - PrivateSubnetInternetRoute
+      - PrivateRouteTable1
+      - PublicRouteTable
+      - PublicSubnet1
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - InternetGateway
+      - DefaultPublicRoute
+      - PrivateSubnet1RouteTableAssociation
+      - PrivateSubnet2RouteTableAssociation
+      - PublicSubnet1RouteTableAssociation
+    Properties:
+      Description: >
+        Creates the TPC Athena Data Source connector
+      Handler: index.handler
+      Environment:
+        Variables:
+          APP_ID: arn:aws:serverlessrepo:us-east-1:292517598671:applications/AthenaTPCDSConnector
+          SPILL_BUCKET: !Ref WorkshopS3Bucket
+          ATHENA_CATALOG_NAME: !Sub "${AWS::StackName}-tpc_ds" 
+          STACK_NAME: !Sub "${AWS::StackName}-tpc"
+      Runtime: python3.11
+      ReservedConcurrentExecutions: 5
+      TracingConfig:
+        Mode: Active
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Role: !GetAtt CreateAthenaDataConnectorLambdaRole.Arn
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from botocore import exceptions
+          import logging
+          import sys
+          import os
+          import cfnresponse
+          import time
+
+          # initialize logger
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.DEBUG)
+          formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+          handler = logging.StreamHandler(sys.stdout)
+          logger.addHandler(handler)
+
+          SERVERLESS_APP_CLIENT = boto3.client('serverlessrepo')
+          CFN_CLIENT = boto3.client('cloudformation')
+          APP_ID = os.environ['APP_ID']
+          SPILL_BUCKET = os.environ['SPILL_BUCKET']
+          ATHENA_CATALOG_NAME = os.environ['ATHENA_CATALOG_NAME']
+          STACK_NAME = os.environ['STACK_NAME']
+
+          def handler(event, context):
+              logger.info(event)
+              if event['RequestType'] == 'Delete':
+                  logger.info(f"Request type was {event['RequestType']}. Deleting serverless app stack id serverlessrepo-{STACK_NAME}.")
+                  try:
+                      response = CFN_CLIENT.delete_stack(StackName=f"serverlessrepo-{STACK_NAME}")
+                      logger.info(f"delete stack response: {response}")
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, response)
+                      return {
+                          'statusCode': 200,
+                          'body': 'Success'
+                      }
+                  except exceptions.ClientError as e:
+                      if e.response['Error']['Code'] == 'ResourceNotFound':
+                          logger.info("resource not found, skipping")
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      else:
+                        logger.error(f"{e}")
+                        cfnresponse.send(event, context, cfnresponse.FAILED, e.response)
+                        return {
+                            'statusCode': e.response['ResponseMetadata']['HTTPStatusCode'],
+                            'body': json.dumps(e['Error']['Code'])
+                        }
+              elif event['RequestType'] == 'Update':
+                  logger.info(f"Request type was {event['RequestType']}. Doing nothing.")
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  return {
+                      'statusCode': 200,
+                      'body': 'Function will update'
+                  }
+              else:
+                  try:
+                      response = SERVERLESS_APP_CLIENT.create_cloud_formation_change_set(
+                          ApplicationId=APP_ID,
+                          StackName=STACK_NAME,
+                          ParameterOverrides=[
+                              {
+                                  'Name': 'AthenaCatalogName',
+                                  'Value': ATHENA_CATALOG_NAME
+                              },
+                              {
+                                  'Name': 'SpillBucket',
+                                  'Value': SPILL_BUCKET
+                              },
+                          ],
+                          Capabilities=['CAPABILITY_IAM'],
+                      )
+                      logger.info(f"CFN changeset submitted successfully: {response}. Checking change set status before executing")
+                      changeset_status = None
+                      while changeset_status != 'CREATE_COMPLETE':
+                          time.sleep(3)
+                          desc_change_set = CFN_CLIENT.describe_change_set(
+                              ChangeSetName=response['ChangeSetId']
+                              )
+                          changeset_status = desc_change_set['Status']
+                          logger.info(f"CFN changeset status: {changeset_status}")
+                      
+                      exec_changeset = CFN_CLIENT.execute_change_set(
+                          ChangeSetName=response['ChangeSetId'],
+                      )
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                      return {
+                          'statusCode': 200,
+                          'body': 'Success'
+                      }
+                  except exceptions.ClientError as e:
+                      logger.error(f"{e}")
+                      cfnresponse.send(event, context, cfnresponse.FAILED, e)
+                      return {
+                          'statusCode': e.response['ResponseMetadata']['HTTPStatusCode'],
+                          'body': json.dumps(e['Error']['Code'])
+                      }
+
+  CreateAthenaDataConnectorLambdaRole: 
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess
+      Policies:
+        - PolicyName: allow_serverless_app_create
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - serverlessrepo:CreateCloudFormationChangeSet
+                  - serverlessrepo:DeleteApplication
+                Resource: arn:aws:serverlessrepo:us-east-1:292517598671:applications/AthenaTPCDSConnector
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:CreateChangeSet
+                Resource: 
+                  - "arn:aws:cloudformation:*:aws:transform/*"
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                Resource: 
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*"
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DeleteStack
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DescribeChangeSet
+                Resource: 
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/serverlessrepo-${AWS::StackName}-tpc*"
+                  - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/serverlessrepo-${AWS::StackName}-tpc/*"
+              - Effect: Allow
+                Action:
+                  - lambda:DeleteFunction
+                  - lambda:CreateFunction
+                  - lambda:GetFunction
+                  - lambda:TagResource
+                  - lambda:GetRuntimeManagementConfig
+                  - lambda:GetFunctionCodeSigningConfig
+                Resource: 
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-tpc_ds" 
+              - Effect: Allow
+                Action:
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:CreateRole
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:PassRole
+                  - iam:TagRole
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                Resource: 
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/serverlessrepo-${AWS::StackName}*"
+              - Effect: Allow # commenting out for testing
+                Action:
+                  # - s3:*
+                  # - s3:ListAllMyBuckets
+                  - s3:GetObject
+                Resource: 
+                  # - !Sub "arn:aws:s3:::${WorkshopS3Bucket}/*"
+                  - "arn:aws:s3:::awsserverlessrepo-*"
+
+
+  AthenaCustomDataSource:
+    Type: AWS::Athena::DataCatalog
+    Properties:
+      Name: !Sub ${AWS::StackName}-tpc_ds
+      Type: LAMBDA
+      Description: TPC DS custom data source
+      Parameters:
+        function: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-tpc_ds
+
+# delete EFS - not handled automatically when deleting domain
+  DeleteEfs:
+    Type: Custom::DeleteEfs
+    Properties:
+      ServiceToken: !GetAtt DeleteEfsFunction.Arn
+      Region: !Ref AWS::Region
+
+  DeleteEfsFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: 
+      - VPCEndpointSagemakerAPI
+      - VPCEndpointSageMakerStudio
+      - VPCEndpointCWL
+      - EC2Endpoint
+      - VPCEndpointSTS
+      - S3Endpoint
+      - NatGateway1
+      - PrivateSubnetInternetRoute
+      - PrivateRouteTable1
+      - PublicRouteTable
+      - PublicSubnet1
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - InternetGateway
+      - DefaultPublicRoute
+      - PrivateSubnet1RouteTableAssociation
+      - PrivateSubnet2RouteTableAssociation
+      - PublicSubnet1RouteTableAssociation
+    Properties:
+      Description: >
+        Deletes the underlying EFS mount for the sagemaker domain
+      Handler: index.handler
+      Environment:
+        Variables:
+          EFS_ID: !GetAtt StudioDomain.HomeEfsFileSystemId
+      Runtime: python3.11
+      ReservedConcurrentExecutions: 5
+      TracingConfig:
+        Mode: Active
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Role:
+        Fn::GetAtt: DeleteEfsFunctionRole.Arn
+      Timeout: 300
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from botocore import exceptions
+          import logging
+          import sys
+          import os
+          import cfnresponse
+          import time
+
+          # initialize logger
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.DEBUG)
+          formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(message)s')
+          handler = logging.StreamHandler(sys.stdout)
+          logger.addHandler(handler)
+
+          EFS_CLIENT = boto3.client('efs')
+          EFS_ID = os.environ['EFS_ID']
+          EC2_CLIENT = boto3.client('ec2')
+
+          def handler(event, context):
+              logger.info(event)
+              if event['RequestType'] == 'Delete':
+                  logger.info(f"Request type was {event['RequestType']}. Deleting EFS file system id {EFS_ID} starting with mounts.")
+                  try:
+                      response = EFS_CLIENT.describe_mount_targets(
+                          FileSystemId=EFS_ID
+                      )
+                      logger.info(f"Found mounts: {response['MountTargets']}")
+                      mount_target_sgs_list = []
+                      logger.info("Grabbing list of SGs to delete later.")
+                      for mount in response['MountTargets']:
+                          logger.info(f"Get mount target security group for mount target {mount['MountTargetId']}.")
+                          mount_target_sgs = EFS_CLIENT.describe_mount_target_security_groups(
+                              MountTargetId=mount['MountTargetId']
+                          )
+                          mount_target_sgs = mount_target_sgs['SecurityGroups']
+                          logger.info(f"Found security groups: {mount_target_sgs}")
+                          mount_target_sgs_list = mount_target_sgs_list + mount_target_sgs
+
+                      logger.info("Deleting mount targets")
+                      for mount in response['MountTargets']:
+                          logger.info(f"Deleting mount target {mount['MountTargetId']} from filesystem {EFS_ID}")
+                          EFS_CLIENT.delete_mount_target(
+                              MountTargetId=mount['MountTargetId']
+                          )
+                          mount_status = None
+                          while mount_status != 'deleted':
+                              logger.info(f"Waiting for mount target {mount['MountTargetId']} to be deleted")
+                              time.sleep(3)
+                              try:
+                                  mount_status = EFS_CLIENT.describe_mount_targets(
+                                      MountTargetId=mount['MountTargetId']
+                                  )
+                                  mount_status = mount_status['MountTargets'][0]['LifeCycleState']
+                              except exceptions.ClientError as e:
+                                  if e.response['Error']['Code'] == 'MountTargetNotFound':
+                                      mount_status = 'deleted'
+                          logger.info(f"mount target deleted: {mount['MountTargetId']}")
+                          
+                      logger.info(f"Deleting mount target security groups for mounts.")
+                      delete_security_groups(mount_target_sgs_list)
+
+                      logger.info(f"Mount targets deleted. Deleting filesystem {EFS_ID}")
+                      delete_response = EFS_CLIENT.delete_file_system(FileSystemId=EFS_ID)
+
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, delete_response)
+                      return {
+                          'statusCode': 200,
+                          'body': 'Success'
+                      }
+                  except exceptions.ClientError as e:
+                      if e.response['Error']['Code'] == 'ResourceNotFound':
+                          logger.info("file system not found, skipping")
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                          return {
+                              'statusCode': 200,
+                              'body': 'Success'
+                          }
+                      if e.response['Error']['Code'] == 'FileSystemNotFound':
+                          logger.info("file system not found, skipping")
+                          cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                          return {
+                              'statusCode': 200,
+                              'body': 'Success'
+                          }
+                      else:
+                          logger.error(f"{e}")
+                          cfnresponse.send(event, context, cfnresponse.FAILED, e.response)
+                          return {
+                              'statusCode': e.response['ResponseMetadata']['HTTPStatusCode'],
+                              'body': json.dumps(e['Error']['Code'])
+                          }
+              else:
+                  logger.info(f"Request type was {event['RequestType']}. Doing nothing.")
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  return {
+                      'statusCode': 200,
+                      'body': 'Success'
+                  }
+              
+          def delete_security_groups(sg_list):
+              sg_rules = EC2_CLIENT.describe_security_group_rules(
+                  Filters=[
+                      {
+                          'Name': 'group-id',
+                          'Values': sg_list
+                      },
+                  ]
+              )
+              sg_rules = sg_rules['SecurityGroupRules']
+              for sgr in sg_rules:
+                  if sgr['IsEgress']:
+                      EC2_CLIENT.revoke_security_group_egress(
+                          GroupId=sgr['GroupId'],
+                          SecurityGroupRuleIds=[sgr['SecurityGroupRuleId']]
+                      )
+                  else:
+                      EC2_CLIENT.revoke_security_group_ingress(
+                          GroupId=sgr['GroupId'],
+                          SecurityGroupRuleIds=[sgr['SecurityGroupRuleId']]
+                      )
+                  logger.info(f"Security group rule id {sgr['SecurityGroupRuleId']} deleted from security group {sgr['GroupId']}.")
+              logger.info(f"Security group rules revoked. Deleting security groups.")
+              for sg in sg_list:
+                  logger.info(f"Deleting security group {sg}")
+                  try:
+                      EC2_CLIENT.delete_security_group(
+                          GroupId=sg
+                      )
+                      logger.info(f"Security group {sg} deleted.")
+                  except exceptions.ClientError as e:
+                      if e.response['Error']['Code'] == 'DependencyViolation':
+                          logger.info("security group not ready to be deleted. Waiting to try one last time...")
+                          time.sleep(5)
+                          EC2_CLIENT.delete_security_group(
+                              GroupId=sg
+                          )
+                          logger.info(f"Security group {sg} deleted.") 
+                      else:
+                          # throw exception
+                          logger.error(e)
+                          raise Exception(e)
+
+  DeleteEfsFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaENIManagementAccess
+      Policies:
+        - PolicyName: allow_delete_efs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:DeleteFileSystem
+                  - elasticfilesystem:DescribeMountTargets
+                Resource: !Sub arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:file-system/${StudioDomain.HomeEfsFileSystemId}
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:DeleteMountTarget
+                  - elasticfilesystem:DescribeMountTargets
+                  - elasticfilesystem:DescribeMountTargetSecurityGroups
+                Resource: !Sub arn:aws:elasticfilesystem:${AWS::Region}:${AWS::AccountId}:file-system/${StudioDomain.HomeEfsFileSystemId}
+              - Effect: Allow
+                Action: 
+                  - ec2:DescribeNetworkInterfaceAttribute # requires *
+                  - ec2:DescribeSecurityGroupRules # requires *
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:DeleteSecurityGroup
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupEgress
+                Resource: !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*
+
+# Stack Outputs
+###########################################################################
+Outputs:
+  # commenting out for cfn itration speed
+  RDSInstanceEndpoint:
+    Description: The RDS instance endpoint/host address
+    Value: !GetAtt RDSInstance.Endpoint.Address
+
+  AthenaResultsS3Location:
+    Description: S3 location of Athena results
+    Value: !Sub ${WorkshopS3Bucket}/athena_results/
+
+  AthenaCatalogName:
+    Description: Athena catalog connected to TPC data source
+    Value: !Ref AthenaCustomDataSource
+
+  SageMakerConsoleLink:
+    Description: SageMaker Studio console link
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/studio/${StudioDomain}

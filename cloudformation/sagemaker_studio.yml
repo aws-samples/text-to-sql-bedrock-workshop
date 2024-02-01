@@ -28,8 +28,7 @@ Parameters:
   GitRepositoryUrl: 
     Type: String
     Description: The .git url of the repository to clone 
-    # Default: https://github.com/aws-samples/text-to-sql-bedrock-workshop.git
-    Default: https://github.com/aws-samples/aws-cdk-examples.git
+    Default: https://github.com/aws-samples/text-to-sql-bedrock-workshop.git
 
   DBUser:
     Description: The admin username

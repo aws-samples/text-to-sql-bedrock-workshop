@@ -225,7 +225,6 @@ pyrightconfig.json
 **question*.json
 
 # ignore layers artifacts
-static/cloudformation/layers/python/*
-static/cloudformation/layers/boto3.zip
+cloudformation/layers/*
 
 # End of https://www.toptal.com/developers/gitignore/api/python,macos,jupyternotebooks

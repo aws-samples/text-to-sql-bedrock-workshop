@@ -107,7 +107,6 @@ cover/
 *.mo
 *.pot
 
-*.json
 vectorstore/
 
 # Django stuff:

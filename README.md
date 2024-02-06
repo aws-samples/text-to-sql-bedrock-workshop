@@ -1,72 +1,32 @@
-> :warning: **This repository is not intended for production use**: The code found here is for demonstration purposes only and not to be used in a production setting!
+# Overview of Natural Language to SQL
 
-# Text-to-SQL Workshop
-This workshop was built for those who wish to have a deeper understanding of Generative AI in the context of interacting with a relational data store, such as a database or a data lake. This workshop is divided into modules that each build on the previous while introducing a new technique to solve this problem. Many of these approaches are based on a existing work from the community and cited accordingly.
+Enterprise data warehouses represent many of the largest technology investments for companies across all industries in the past 20 years. While generative AI has shown a lot of promise in creating novel content and comprehending large corpora of information in unstructured format, how will it improve consumption of the data organizations have invested so much in making useful? These data sources are among the most trusted in an organization and drive decisions at the highest levels of leadership in many cases.
 
+Since its inception in the 70’s, Structure Query Language (SQL) has been the most ubiguitous language to interact with a databases but one still needs a deep understanding of set theory, data types, and foreign key relationships in order to make sense of the data. Generative AI offers a way to bridge this knowledge and skills gap by translating natural language questions into a valid SQL query.
 
-See below for architecture.
+### Personas
+The systems and people standing to benefit from this access pattern to databases includes non-technical folks looking to incorporate relational data sources into their process, like customer service agents and call-center associates. Further, technical use cases include Extract-Transform-Load pipelines, existing Retrieval Augmented Generation (RAG) architectures that integrate relational databases, and organizations who are dealing with a data platform too big to reasonably navigate in isolation.
 
-![Workshop Architecture](/images/workshop_architecture.png "Workshop Architecture")
+### The Problem
+The hardest components of creating an accurate SQL query out of natural language are the same ones we might have struggled with as newcomers to the language. Concepts like identifying foreign key relationships, breaking down the question into smaller, nested queries, and properly joining tables, are among the hardest components of SQL query generation. According to researchers, over 50% of SQL generation tests fail on schema linking and joins alone.
 
-## Supported Regions
-This workshop can be deployed in `us-west-2` or `us-east-1`. If you deploy in any other region, the cloudformation stack will fail to deploy.
+On top of these core components of the query, each database engine has its own syntax that may warrant mastery of in order to write a valid query. Further, in many organizations, there are many overlapping data attributes - a value is aggregated in one table and not aggregated in another, for example - as well as abbreviated column names that require tribal knowledge to use correctly.
 
-## Deploy Lambda Layer
-This solution requires a version of Boto3 => 1.3
-1. Run the `build_boto3_layer.sh` script to package the boto3 library into a zip.
-1. Upload this zipfile to an s3 location and be sure to name it `boto3.zip`. It must s3:GetObject to the account this will be deployed in.
-1. Update the cloudformation parameters in your parameter overrides to use your bucket and object key: `LayersBucket` and `Boto3LayerS3ObjKey`. See below.
+### Measuring Success
+So how close are we to solving this problem? The community has coalesced around two main leaderboards that rank the most successful approaches with labeled data set: [Spider](https://yale-lily.github.io/spider) and [BIRD](https://bird-bench.github.io/). Both leaderboards prioritize the most important metric for measuring the accuracy of any given approach to solving this problem, called Execution Accuracy (EX). This metric simply compares the generated SQL query to the labeled SQL query to determine if its a match or not. Further, SPIDER measures Exact Set Match Accuracy (EM) – did the returned result set actually answer the question, regardless of how the query was written – and BIRD offers Valid Efficiency Score (VES), a measure how performant the generated SQL query is. You can read more about each benchmark data set on their respective pages.
 
-## Update Parameters
-You should have updated parameters in your `us_west_2.json` file in the following format.
-**Be sure to update the DBPassword and DBUser values or this stack will not deploy.**
-```
-{
-    "Parameters": {
-        "DBPassword": "passwordfordatabase",
-        "DBUser": "userfordatabase",
-        "LayersBucket": "bucketname",
-        "Boto3LayerS3ObjKey": "boto3.zip"
-    }
-}
-```
+The Spider and BIRD datasets have proven to be authoritative, robust data sets to benchmark Text-to-SQL techniques, and even fine-tune models with. Throughout this module we will refer to these datasets and their corresponding leaderboards to demonstrate the most robust approaches to Text-to-SQL.
 
-## Deploy Infrastructure with AWS CLI
-This template requires use of an S3 bucket given its size.
-```
-aws cloudformation deploy \
-    --stack-name txt2sql \
-    --region us-west-2 \
-    --template-file ./cloudformation/sagemaker_studio.yml \
-    --capabilities CAPABILITY_NAMED_IAM \
-    --parameter-overrides file://cloudformation/parameters/us_west_2.json \
-    --s3-bucket bucket-to-hold-cfn-template
-```
+### State of the Art
+According to the BIRD leaderboard, the state of the art for the Text-to-SQL problem sits at 60% Execution Accuracy. While that’s still well short of human performance, note that in one year we've moved from the baseline T5 model performing at 7% EM to a year later seeing EM exceed 60%. We’re excited to see how this further improves in the coming year as these models and techniques continue to be researched.
 
-## Deploy Infrastructure using the Console
-To deploy this template using the AWS Console only, [follow the instructions here](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-console-create-stack.html) by uploading the template found in the `cloudformation` folder named `sagemaker_studio.yml`.
+Its important to note these techniques are optimized for a single thing, which is generating the correct SQL query. These leaderboards don't assess some critical aspects to these techniques, most importantly speed. Many of these techniques demonstrate an end-to-end prompt chain speed of well over a few seconds, which many zero-shot business intelligence use cases can't tolerate. Additionally, many of them also make multiple inferences to an LLM to complete the necessary reasoning, which can drive up the cost per query considerably.
 
-Note that the template can take up to 20 minutes to deploy.
+### Workshop Content
+This workshop is designed to be a progression of Text-to-SQL techniques, starting with robust prompt engineering. All code is in the form of Jupyter Notebooks, hosted in SageMaker Studio. When you're ready to get started, head over to [Setup](./SETUP.md) to begin deployment of the necessary resources for this workshop.
 
 
-## Amazon SageMaker Studio Access
+Below an outline of the workshop content:
 
-Amazon SageMaker Studio is a web-based, integrated development environment (IDE) for machine learning that lets you 
-build, train, debug, deploy, and monitor your machine learning models. Studio provides all the tools you need to take 
-your models from experimentation to production while boosting your productivity.
-
-1. Open the AWS Management Console and switch to AWS region communicated by your instructor.
-
-2. Under Services search for Amazon SageMaker. Once there, click on `Studio` on the left menu.
-
-![sm-started1](/images/sm-started1.png)
-![sm_studio_menu](/images/sm_studio_menu.png)
-
-3. From the drop down under "Get Started" you should see your workshop populated with a user profile of `workshop-user`. Click "Open Studio" to open Sagemaker Studio.
-
-![sm-started2](/images/sm-started2.png)
-
-4. You will be redirected to a new web tab that looks like this. Click on "View JupyterLab spaces".
-
-**You are now ready to begin!**
-
+* **Module 1: Advanced Prompt Engineering for Text-to-SQL.** Use Amazon Bedrock to implement some of the State-of-the-Art techniques against an Amazon Athena data set and a relational database.
+* **Module 2: Retrieval Augmented Generation (RAG) for Text-to-SQL.** Leverage a FAISS in-memory vector store of data set meta data to improve query accuracy.

@@ -16,24 +16,25 @@ This workshop can be deployed in `us-west-2` or `us-east-1`. If you deploy in an
 
 ## Deploy Lambda Layer
 This solution requires a version of Boto3 => 1.3
-1. Run the `build_boto3_layer.sh` script to package the boto3 library into a zip.
-1. Locate the `boto3.zip` file in the `cloudformation/layers` folder of this repository.
-1. Upload this zipfile to an s3 location and be sure to name the object `boto3.zip`. It must permit s3:GetObject to the account this will be deployed in.
-1. Update the cloudformation parameters in your parameter overrides to use your bucket and object key: `LayersBucket` and `Boto3LayerS3ObjKey`. See below for updating parameters.
-
-## Update Parameters
-You should have updated parameters in your `us_west_2.json` file in the following format.
-**Be sure to update the DBPassword and DBUser values or this stack will not deploy.**
-```
-{
-    "Parameters": {
-        "DBPassword": "passwordfordatabase",
-        "DBUser": "userfordatabase",
-        "LayersBucket": "bucketname",
-        "Boto3LayerS3ObjKey": "boto3.zip"
-    }
-}
-```
+1. **Package Boto3 as Lambda Layer.** Run the `build_boto3_layer.sh` script to package the boto3 library into a zip.
+1. **Verify Package Created.** Locate the `boto3.zip` file in the `cloudformation/layers` folder of this repository.
+1. **Upload the Zip File to an S3 Location.** Package the Boto3 library into a zip file named boto3.zip. Then, upload this zip file to an Amazon S3 bucket of your choosing. This S3 bucket acts as a storage location from which AWS Lambda can access the Boto3 library.
+    * Why It's Important: AWS Lambda layers are used to include additional code and content, such as libraries, dependencies, or custom code, in your Lambda function's execution environment. By uploading the boto3.zip file to S3, you're preparing to create a Lambda layer that includes the Boto3 library, which is essential for the AWS SDK for Python. This enables your Lambda functions to interact with AWS services.
+    * Requirement for s3:GetObject: The AWS account that will deploy the CloudFormation stack must have permissions to access (s3:GetObject) the uploaded boto3.zip file. This permission ensures that when you specify the S3 bucket and object key in the CloudFormation template or parameters, AWS can retrieve the zip file to create the Lambda layer.
+1. **Update the CloudFormation Parameters.** Modify your CloudFormation stack's parameters to include the name of the S3 bucket (LayersBucket) where you've uploaded the boto3.zip file, and the object key (Boto3LayerS3ObjKey) that uniquely identifies the file within the bucket. This is typically done in a parameters JSON file that you pass to CloudFormation during the stack creation or update process.
+    * Why It's Important: CloudFormation templates can dynamically accept input parameters at runtime. By specifying the LayersBucket and Boto3LayerS3ObjKey, you're telling CloudFormation where to find the Boto3 library zip file for the Lambda layer. This step is crucial for successfully deploying the stack with all its required components, including any Lambda functions that depend on the Boto3 layer.
+    * Parameter Overrides Example: When deploying your CloudFormation stack using the AWS CLI, you might use a command like this, where `us_west_2.json` is your parameters file:
+        * **Be sure to update the DBPassword and DBUser values or this stack will not deploy.**
+            ```
+            {
+                "Parameters": {
+                    "DBPassword": "passwordfordatabase",
+                    "DBUser": "userfordatabase",
+                    "LayersBucket": "bucketname",
+                    "Boto3LayerS3ObjKey": "boto3.zip"
+                }
+            }
+            ```
 
 ## Deploy Infrastructure with AWS CLI
 This template requires use of an S3 bucket given its size.

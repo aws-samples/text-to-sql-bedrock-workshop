@@ -3,7 +3,6 @@ import json
 import boto3
 import sqlalchemy as sa
 import logging
-from anthropic import Anthropic
 import botocore
 import jinja2 as j
 import os
@@ -19,7 +18,7 @@ handler = logging.StreamHandler(sys.stdout)
 logger.addHandler(handler)
 current_dir = os.path.dirname(__file__)
 
-ANTHROPIC_CLIENT = Anthropic()
+# ANTHROPIC_CLIENT = Anthropic()
 JINJA_ENV = j.Environment(
     loader=j.FileSystemLoader(f"{current_dir}/prompt_templates"),
     autoescape=j.select_autoescape(
@@ -114,24 +113,6 @@ class DIN_SQL:
         }
 
 
-    def add_tokens(self, payload, is_output_token=False):
-        """
-        Adds token counts for inpt and outputs to the token calculator
-
-        payload: the text to be used to calculate tokens
-        is_output_token: whether the payload is an output token or an input token
-        returns: None
-        raises: None
-        side effects: adds tokens to the token calculator
-        
-        """
-        tokens = ANTHROPIC_CLIENT.count_tokens(payload)
-        if is_output_token:
-            self.token_summary["output_tokens"] += tokens
-        else:
-            self.token_summary["input_tokens"] += tokens
-
-
     def query(self, sql_string):
         """
         Executes a query and returns the results. Attempts to fix any exceptions and try again.
@@ -177,7 +158,6 @@ class DIN_SQL:
         """
         if self.model_id.startswith("anthropic.claude"):
             new_prompt = f"\n\nHuman: {prompt}\n\nAssistant: "
-            self.add_tokens(new_prompt, is_output_token=False)
             return new_prompt
         else:
             return prompt
@@ -449,7 +429,6 @@ class DIN_SQL:
                         })
                 )
                 output = json.loads(response['body'].read())['completion']
-                self.add_tokens(output, is_output_token=True)
                 results = output
             else:
                 response = self.bedrock_runtime_boto3_client.invoke_model(
@@ -492,7 +471,6 @@ class DIN_SQL:
                 )
                 anthropic_result = response['body'].read().decode('utf-8')
                 results = json.loads(anthropic_result)['completion']
-                self.add_tokens(results, is_output_token=True)
             else:
                 response = self.bedrock_runtime_boto3_client.invoke_model(
                     modelId=self.model_id,

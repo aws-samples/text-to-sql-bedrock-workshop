@@ -26,7 +26,8 @@ Its important to note these techniques are optimized for a single thing, which i
 This workshop is designed to be a progression of Text-to-SQL techniques, starting with robust prompt engineering. All code is in the form of Jupyter Notebooks, hosted in SageMaker Studio. When you're ready to get started, head over to [Setup](./SETUP.md) to begin deployment of the necessary resources for this workshop.
 
 
-Below an outline of the workshop content:
+Below is an outline of the workshop content:
 
 * **Module 1: Advanced Prompt Engineering for Text-to-SQL.** Use Amazon Bedrock to implement some of the State-of-the-Art techniques against an Amazon Athena data set and a relational database.
 * **Module 2: Retrieval Augmented Generation (RAG) for Text-to-SQL.** Leverage a FAISS in-memory vector store of data set meta data to improve query accuracy.
+* **Module 3: Fine-tuning for Text-to-SQL.** Fine-tune a Titan model on the Spider Dataset to improve Text-to-SQL accuracy.

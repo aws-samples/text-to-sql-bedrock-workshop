@@ -106,7 +106,6 @@ cover/
 # Translations
 *.mo
 *.pot
-
 vectorstore/
 
 # Django stuff:

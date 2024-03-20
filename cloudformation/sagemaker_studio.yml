@@ -444,6 +444,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - bedrock:InvokeModel
+                  - bedrock:CreateModelCustomizationJob
                 Resource: 
                   - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude*
                   - !Sub arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan*
@@ -453,9 +454,11 @@ Resources:
                 Resource: "*"
               - Effect: Allow
                 Action: 
-                  - bedrock:CreateModelCustomizationJob
                   - bedrock:GetModelCustomizationJob
-                Resource: !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:custom-model/"
+                  - bedrock:CreateModelCustomizationJob
+                Resource: 
+                  - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:custom-model/*"
+                  - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:model-customization-job/*"
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSageMakerFullAccess"
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonS3ReadOnlyAccess"

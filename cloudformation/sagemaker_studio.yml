@@ -28,8 +28,7 @@ Parameters:
   GitRepositoryUrl: 
     Type: String
     Description: The .git url of the repository to clone 
-    # Default: https://github.com/aws-samples/text-to-sql-bedrock-workshop.git
-    Default: https://github.com/aws-samples/aws-cdk-examples.git
+    Default: https://github.com/aws-samples/text-to-sql-bedrock-workshop.git
 
   DBUser:
     Description: The admin username
@@ -339,6 +338,47 @@ Resources:
       SourceSecurityGroupId: !Ref VPCEndpointSecurityGroup
       Description: Allows inbound traffic from the same security group
   
+  BedrockFineTuningRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - bedrock.amazonaws.com
+            Action:
+              - sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnEquals:
+                aws:SourceArn: !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:model-customization-job/*
+      Path: /
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-br-fine-tune-role'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+            - Effect: Allow
+              Action:
+              - s3:GetObject
+              - s3:ListBucket
+              Resource:
+              - !Sub arn:aws:s3:::${WorkshopS3Bucket}
+              - !Sub arn:aws:s3:::${WorkshopS3Bucket}/*
+            - Effect: Allow
+              Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:ListBucket
+              Resource:
+              - !Sub arn:aws:s3:::${WorkshopS3Bucket}
+              - !Sub arn:aws:s3:::${WorkshopS3Bucket}/*
+
+
+
   SageMakerExecutionRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -373,6 +413,11 @@ Resources:
                 Action:
                   - athena:ListWorkGroups # requires *
                 Resource: "*"
+              - Effect: Allow
+                Action: 
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt BedrockFineTuningRole.Arn
               - Effect: Allow
                 Action:
                   - athena:StartQueryExecution
@@ -1742,3 +1787,7 @@ Outputs:
   SageMakerConsoleLink:
     Description: SageMaker Studio console link
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/studio/${StudioDomain}
+
+  BedrockFineTuningJobRole:
+    Description: Used in Module 3 to submit a model customization job
+    Value: !GetAtt BedrockFineTuningRole.Arn

@@ -169,7 +169,8 @@ class DIN_SQL:
 
         :param test_sample_text:    The natural language question
         :param database:            The database name to inspect
-        :return: The hard prompt.
+        :return:                    The hard prompt.
+        :note                       word_in_mouth for claude is: A: Let's think step by step. "{question}" can be solved by knowing the answer to the following sub-question "{sub_questions}". The SQL query for the sub-question "
         """
         prompt = self.hard_prompt.render(
             instruction_tag_start=self.instructions_tag_start,
@@ -184,7 +185,8 @@ class DIN_SQL:
             sql_tag_start=sql_tag_start,
             sql_tag_end=sql_tag_end
         )
-        return self.bedrock_claude_prompt_maker(prompt)
+        # return self.bedrock_claude_prompt_maker(prompt)
+        return prompt
 
 
     def medium_prompt_maker(self, test_sample_text, database, schema_links, sql_tag_start='```sql', sql_tag_end='```'):
@@ -193,7 +195,8 @@ class DIN_SQL:
 
         :param test_sample_text:    The natural language question
         :param database:            The database name to inspect
-        :return: The medium prompt.
+        :return:                    The medium prompt.
+        :note                       word_in_mouth for claude is: SQL: {sql_tag_start}
         """
         prompt = self.medium_prompt.render(
             instruction_tag_start=self.instructions_tag_start,
@@ -207,7 +210,8 @@ class DIN_SQL:
             sql_tag_start=sql_tag_start,
             sql_tag_end=sql_tag_end
         )
-        return self.bedrock_claude_prompt_maker(prompt)
+        # return self.bedrock_claude_prompt_maker(prompt)
+        return prompt
 
 
     def easy_prompt_maker(self, test_sample_text, database, schema_links, sql_tag_start='```sql', sql_tag_end='```'):
@@ -216,7 +220,8 @@ class DIN_SQL:
 
         :param test_sample_text:    The natural language question
         :param database:            The database name to inspect
-        :return: The easy prompt.
+        :return:                    The easy prompt.
+        :note                       word_in_mouth for claude is: SQL: {sql_tag_start}
         """
         prompt = self.easy_prompt.render(
             instruction_tag_start=self.instructions_tag_start,
@@ -229,7 +234,8 @@ class DIN_SQL:
             sql_tag_start=sql_tag_start,
             sql_tag_end=sql_tag_end
         )
-        return self.bedrock_claude_prompt_maker(prompt)
+        # return self.bedrock_claude_prompt_maker(prompt)
+        return prompt
 
 
     def classification_prompt_maker(self, test_sample_text, database, schema_links):
@@ -238,7 +244,8 @@ class DIN_SQL:
 
         :param test_sample_text:    The natural language question
         :param database:            The database name to inspect
-        :return: The classification of the query required to answer the question.
+        :return:                    The classification of the query required to answer the question.
+        :note:                      word_in_mouth for claude here is: A: Let’s think step by step. 
         """
 
         prompt = self.classification_prompt.render(
@@ -253,7 +260,8 @@ class DIN_SQL:
             classification_start='<label>',
             classification_end='</label>'
         )
-        return self.bedrock_claude_prompt_maker(prompt)
+        # return self.bedrock_claude_prompt_maker(prompt)
+        return prompt
 
 
     def schema_linking_prompt_maker(self, test_sample_text, database):
@@ -262,7 +270,8 @@ class DIN_SQL:
 
         :param test_sample_text:    The natural language question
         :param database:            The database name to inspect
-        :return: The schema linking prompt.
+        :return:                    The schema linking prompt.
+        :note                       word_in_mouth for claude here is: A. Let’s think step by step. In the question "{question}", we are asked: 
         """
         prompt = self.schema_linking_prompt.render(
             instruction_tag_start=self.instructions_tag_start,
@@ -275,7 +284,8 @@ class DIN_SQL:
             schema_links_start='<links>',
             schema_links_end='</links>'
         )
-        return self.bedrock_claude_prompt_maker(prompt)
+        # return self.bedrock_claude_prompt_maker(prompt)
+        return prompt
 
 
     def find_foreign_keys(self, db_name):
@@ -403,15 +413,17 @@ class DIN_SQL:
             question=test_sample_text,
             sql_query=sql
         )
-        return self.bedrock_claude_prompt_maker(prompt)
+        # return self.bedrock_claude_prompt_maker(prompt)
+        return prompt
 
 
-    def llm_generation(self, prompt, stop_sequences=[]):
+    def llm_generation(self, prompt, stop_sequences=[],word_in_mouth=None):
         """
         Invokes the model with the given prompt
 
         :param prompt:          prompt for model
         :param stop_sequences:  list of stop sequence strings for model to use
+        :param word_in_mouth:   start the assistant's response
         
         returns: model output
 
@@ -419,17 +431,26 @@ class DIN_SQL:
         results=None
         try:
             if self.model_id.startswith('anthropic'):
+
+                user_message =  {"role": "user", "content": prompt}
+                messages = [user_message]
+                if word_in_mouth:
+                    messages.append({
+                        "role": "assistant",
+                        "content": word_in_mouth,
+                    })
                 response = self.bedrock_runtime_boto3_client.invoke_model(
                     modelId=self.model_id,
                     body=json.dumps({
-                        "prompt": prompt,
+                        "anthropic_version": "bedrock-2023-05-31",
+                        "messages": messages,
                         "temperature": 0,
-                        "max_tokens_to_sample": self.max_tokens_to_sample,
+                        "max_tokens": self.max_tokens_to_sample,
                         "stop_sequences": stop_sequences,
                         })
                 )
-                output = json.loads(response['body'].read())['completion']
-                results = output
+                response_dict = json.loads(response.get('body').read().decode("utf-8"))
+                results = response_dict["content"][0]["text"]
             else:
                 response = self.bedrock_runtime_boto3_client.invoke_model(
                     modelId=self.model_id,
@@ -460,17 +481,20 @@ class DIN_SQL:
         results=None
         try:
             if self.model_id.startswith('anthropic'):
+                user_message =  {"role": "user", "content": prompt}
+                messages = [user_message]
                 response = self.bedrock_runtime_boto3_client.invoke_model(
                     modelId=self.model_id,
                     body=json.dumps({
-                        "prompt": prompt,
-                        "stop_sequences": [self.example_tag_end],
+                        "anthropic_version": "bedrock-2023-05-31",
+                        "messages": messages,
                         "temperature": 0,
-                        "max_tokens_to_sample": self.max_tokens_to_sample
+                        "max_tokens": self.max_tokens_to_sample,
+                        "stop_sequences": [self.example_tag_end],
                         })
                 )
-                anthropic_result = response['body'].read().decode('utf-8')
-                results = json.loads(anthropic_result)['completion']
+                response_dict = json.loads(response.get('body').read().decode("utf-8"))
+                results = response_dict["content"][0]["text"]
             else:
                 response = self.bedrock_runtime_boto3_client.invoke_model(
                     modelId=self.model_id,
@@ -540,7 +564,8 @@ class DIN_SQL:
                         database=db_name, 
                         schema_links=schema_links,
                         sql_tag_start=sql_tag_start,
-                        sql_tag_end=sql_tag_end
+                        sql_tag_end=sql_tag_end,
+                        word_in_mouth=f"SQL: {sql_tag_start}"
                         ),
                     stop_sequences=[self.example_tag_end])
             elif classification == 'NON-NESTED':
@@ -551,7 +576,9 @@ class DIN_SQL:
                         schema_links=schema_links,
                         sql_tag_start=sql_tag_start,
                         sql_tag_end=sql_tag_end),
-                    stop_sequences=[self.example_tag_end])
+                    stop_sequences=[self.example_tag_end],
+                    word_in_mouth=f"SQL: {sql_tag_start}"
+                    )
             elif classification == 'NESTED':
                 if classification.find('questions = [') != -1:
                     sub_questions = classification.split('questions = ["')[1].split('"]')[0]
@@ -563,7 +590,10 @@ class DIN_SQL:
                             sql_tag_start=sql_tag_start,
                             sql_tag_end=sql_tag_end, 
                             sub_questions=sub_questions),
-                        stop_sequences=[self.example_tag_end])
+                        stop_sequences=[self.example_tag_end],
+                        word_in_mouth=f'''A: Let's think step by step. "{question}" can be solved by knowing the answer to the following sub-question "{sub_questions}". The SQL query for the sub-question "
+                        '''
+                        )
                 else:
                     logger.info(f"Question was classified as NESTED but no sub_questions were found. Assuming NON-NESTED instead")
                     SQL = self.llm_generation(
@@ -573,7 +603,8 @@ class DIN_SQL:
                             schema_links=schema_links,
                             sql_tag_start=sql_tag_start,
                             sql_tag_end=sql_tag_end),
-                        stop_sequences=[self.example_tag_end]
+                        stop_sequences=[self.example_tag_end],
+                        word_in_mouth=f"SQL: {sql_tag_start}"
                         )
             else:
                 logger.error(f"Unknown classification: {classification}")

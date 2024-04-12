@@ -1585,7 +1585,7 @@ Resources:
           - !Ref PrivateSubnet2
       Role:
         Fn::GetAtt: DeleteEfsFunctionRole.Arn
-      Timeout: 300
+      Timeout: 900
       Code:
         ZipFile: |
           import json

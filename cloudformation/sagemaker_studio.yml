@@ -1518,7 +1518,7 @@ Resources:
                   - iam:ListAttachedRolePolicies
                   - iam:ListRolePolicies
                 Resource: 
-                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/serverlessrepo-${AWS::StackName}*"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/serverlessrepo-*"
               - Effect: Allow # commenting out for testing
                 Action:
                   # - s3:*

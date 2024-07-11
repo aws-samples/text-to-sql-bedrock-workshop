@@ -36,8 +36,17 @@ This solution requires a version of Boto3 => 1.3
             }
             ```
 
-## Deploy Infrastructure with AWS CLI
-This template requires use of an S3 bucket given its size.
+## Deploying the CloudFormation Template
+
+A [CloudFormation template](./cloudformation/sagemaker_studio.yml) deploys resources that are required for this workshop, including databases and a SageMaker Studio domain within which a notebook is setup for use with this workshop. To deploy this template, first clone this repo in an environment (e.g., your laptop or another SageMaker notebook) and then follow the instructions below to deploy the stack.
+
+If deploying withe AWS CLI then you will need to have the CLI V2 installed (see [here](https://docs.aws.amazon.com/cli/latest/userguide/cliv2-migration-instructions.html)).
+
+Note that the workshop notebooks must be run within the SageMaker Studio domain that is created by this template. Attempting to run these notebooks in a different environment (such as the one used to deploy the template) will fail due to not having sufficient IAM roles to access databases and other resources.
+
+### Deploy Infrastructure with AWS CLI
+This template requires use of an S3 bucket given its size. For example, to deploy in us-west-2:
+
 ```
 aws cloudformation deploy \
     --stack-name txt2sql \
@@ -48,7 +57,9 @@ aws cloudformation deploy \
     --s3-bucket bucket-to-hold-cfn-template
 ```
 
-## Deploy Infrastructure using the Console
+When updating the parameters in `cloudformation/parameters/{region}.json` make sure that the DBPassword is at least 8 characters long.
+
+### Deploy Infrastructure using the Console
 To deploy this template using the AWS Console only, [follow the instructions here](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-console-create-stack.html) by uploading the template found in the `cloudformation` folder named `sagemaker_studio.yml`.
 
 Be sure to update the parameters for template when deploying in console [as described here](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/cfn-using-console-create-stack-parameters.html). You will need to update the following:

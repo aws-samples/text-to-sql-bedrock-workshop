@@ -56,9 +56,11 @@ def extract_s3_bucket(s3_url_a_like: str) -> str:
         return s3_url_a_like
 
 
-def run_bedrock(model_id: str, system_prompts: list, messages: list,
-                temperature: float = 0.2,
-                top_k: int = 200) -> str:
+def run_bedrock(system_prompts: list,
+                messages: list,
+                temperature: float,
+                top_k: int,
+                model_id: str) -> str:
     inference_config = {"temperature": temperature}
     additional_model_fields = {"top_k": top_k}
     response = bedrock_client.converse(
@@ -66,10 +68,22 @@ def run_bedrock(model_id: str, system_prompts: list, messages: list,
         messages=messages,
         system=system_prompts,
         inferenceConfig=inference_config,
-        additionalModelRequestFields=additional_model_fields
-    )
+        additionalModelRequestFields=additional_model_fields)
     output_message = response['output']['message']
-    return output_message
+    return "".join(content.get("text", "")
+                   for content in output_message["content"])
+
+
+def run_bedrock_simple_prompt(system_prompts: list,
+                              prompt: str,
+                              temperature: float,
+                              top_k: int,
+                              model_id: str):
+    return run_bedrock(model_id=model_id,
+                       system_prompts=system_prompts,
+                       messages=[{"role": "user", "content": [{"text": prompt}]}],
+                       temperature=temperature,
+                       top_k=top_k)
 
 
 def extract_tag(response: str, name: str, greedy: bool = True) -> Tuple[str, int]:

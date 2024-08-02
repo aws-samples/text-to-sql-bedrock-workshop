@@ -1,12 +1,26 @@
 from typing import List, Tuple
-import json
+import re
+from functools import partial
 
 import boto3
 
 
-CF_TEMPLATE_NAME = "sagemaker-studio"
+CF_TEMPLATE_NAMES = ["txt2sql2", "sagemaker-studio"]
 cf_client = boto3.client("cloudformation")
-bedrock_client = boto3.client(service_name='bedrock-runtime')
+bedrock_client = boto3.client(service_name="bedrock-runtime")
+
+
+def get_cf_stack():
+    """ Use boto3 to lookup information about the CF stack. """
+    for name in CF_TEMPLATE_NAMES:
+        print(f"Trying stack name {name}...")
+        try:
+            response = cf_client.describe_stacks(StackName=name)
+            # print(f"response: {response}")
+            return response
+        except Exception as ex:
+            pass
+    return None
 
 
 def extract_CF_outputs(*output_names: List[str]) -> List[str]:
@@ -14,10 +28,14 @@ def extract_CF_outputs(*output_names: List[str]) -> List[str]:
     Given a list of names of outputs in CF_TEMPLATE_NAME, return the
     corresponding value (or None, if the output doesn't exist).
     """
-    response = cf_client.describe_stacks(StackName=CF_TEMPLATE_NAME)
+    response = get_cf_stack()
     outputs = response['Stacks'][0]['Outputs']
-    print(json.dumps(outputs, indent=2))
-    required_outputs = [next(filter(lambda x: x["OutputKey"] == output_name, outputs),
+    # print(json.dumps(outputs, indent=2))
+
+    def output_key_matches(x: dict, output_name: str) -> bool:
+        return x["OutputKey"] == output_name
+
+    required_outputs = [next(filter(partial(output_key_matches, output_name=output_name), outputs),
                              None)
                         for output_name in output_names]
     required_values = [output["OutputValue"] if output else None
@@ -26,13 +44,17 @@ def extract_CF_outputs(*output_names: List[str]) -> List[str]:
 
 
 def extract_s3_bucket(s3_url_a_like: str) -> str:
+    """
+    Given an S3 location, like 's3://<bucket-name>/<key>', return
+    the <key> part.
+    """
     if s3_url_a_like.startswith("s3://"):
         s3_url_a_like = s3_url_a_like[5:]
     try:
         return s3_url_a_like.split("/")[0]
     except:
         return s3_url_a_like
-    
+
 
 def run_bedrock(model_id: str, system_prompts: list, messages: list,
                 temperature: float = 0.2,

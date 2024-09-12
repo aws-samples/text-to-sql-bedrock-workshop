@@ -28,7 +28,8 @@ This workshop is designed to be a progression of Text-to-SQL techniques, startin
 
 Below is an outline of the workshop content:
 
-* **Module 1: Advanced Prompt Engineering for Text-to-SQL.** Use Amazon Bedrock to implement some of the State-of-the-Art techniques against an Amazon Athena data set and a relational database.
-* **Module 2: Retrieval Augmented Generation (RAG) for Text-to-SQL.** Leverage a FAISS in-memory vector store of data set meta data to improve query accuracy.
-* **Module 3: Fine-tuning for Text-to-SQL.** Fine-tune a Titan model on the Spider Dataset to improve Text-to-SQL accuracy.
+* **Module 1: Single-Table Langchain, Optimized for Latency.** We use Amazon Bedrock and Langchain's [SQLDatabase Toolkit](https://python.langchain.com/v0.2/docs/integrations/tools/sql_database/) to query a biomedical dataset. We show here how to minimize latency when the schema is relatively straightforward.
+* **Module 2: Advanced Prompt Engineering for Text-to-SQL.** Use Amazon Bedrock to implement some of the State-of-the-Art techniques against an Amazon Athena data set and a relational database.
+* **Module 3: Retrieval Augmented Generation (RAG) for Text-to-SQL.** Leverage a FAISS in-memory vector store of data set meta data to improve query accuracy.
 * **Module 4: Introduction to Security for Text-to-SQL.** Guard against prompt injection and SQL injection using prompt engineering techniques.  
+* **Module 5: Fine-tuning for Text-to-SQL.** Fine-tune a Titan model on the Spider Dataset to improve Text-to-SQL accuracy.

@@ -5,7 +5,7 @@ from functools import partial
 import boto3
 
 
-CF_TEMPLATE_NAMES = ["txt2sql2", "sagemaker-studio"]
+CF_TEMPLATE_NAMES = ["txt2sql", "txt2sql2", "sagemaker-studio"]
 cf_client = boto3.client("cloudformation")
 bedrock_client = boto3.client(service_name="bedrock-runtime")
 

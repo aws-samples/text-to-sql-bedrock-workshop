@@ -1802,3 +1802,11 @@ Outputs:
   BedrockFineTuningJobRole:
     Description: Used in Module 3 to submit a model customization job
     Value: !GetAtt BedrockFineTuningRole.Arn
+
+  DbUser:
+    Description: Name of user for database in 02_few_shot_text2sql.ipynb
+    Value: dbadmin
+
+  DbPassword:
+    Description: "Database user's password in 02_few_shot_text2sql.ipynb"
+    Value: Zo3Shae8phahK1EiPeesah230Eeghie3

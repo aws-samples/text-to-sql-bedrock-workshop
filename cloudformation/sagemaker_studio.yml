@@ -419,6 +419,10 @@ Resources:
                 Resource:
                   - !GetAtt BedrockFineTuningRole.Arn
               - Effect: Allow
+                Action: 
+                  - cloudformation:DescribeStacks
+                Resource: "*"
+              - Effect: Allow
                 Action:
                   - athena:StartQueryExecution
                   - athena:GetQueryResults
@@ -443,7 +447,7 @@ Resources:
                 Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*
               - Effect: Allow
                 Action:
-                  - bedrock:InvokeModel
+                  - bedrock:InvokeModel*
                   - bedrock:CreateModelCustomizationJob
                   - bedrock:*ProvisionedModelThroughput
                 Resource: 

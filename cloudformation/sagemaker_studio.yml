@@ -1499,6 +1499,11 @@ Resources:
                   - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/serverlessrepo-${AWS::StackName}-tpc/*"
               - Effect: Allow
                 Action:
+                - ecr:GetDownloadUrlForLayer
+                - ecr:BatchGetImage
+                Resource: !Sub "arn:aws:ecr:${AWS::Region}:*:repository/athena-federation-repository-tpcds" # the account id is referenced dynamically and can't be statically declared here.
+              - Effect: Allow
+                Action:
                   - lambda:DeleteFunction
                   - lambda:CreateFunction
                   - lambda:GetFunction
